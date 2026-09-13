@@ -46,6 +46,7 @@ def submit_chain(config_path, seed, jobs_per_chain, dry_run=False):
         cmd = [
             'sbatch',
             f'--job-name={job_name}',
+            f'--chdir={REPO_ROOT}',
             '--exclude=fc10713',
             f'--export=ALL,CONFIG={config_path},SEED={seed}',
         ]

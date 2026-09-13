@@ -16,7 +16,14 @@
 #   source /home/thanh2/projects/def-juliana2/thanh2/.torch/bin/activate
 #   pip install -e .
 
-REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+# SLURM copies this script into /localscratch/spool/slurmd and runs that
+# copy, so BASH_SOURCE[0] is NOT the file in the repo. Use the directory
+# sbatch was invoked from (launch.py chdirs to the repo first).
+if [ -n "${SLURM_SUBMIT_DIR:-}" ]; then
+    REPO_ROOT="$SLURM_SUBMIT_DIR"
+else
+    REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+fi
 cd "$REPO_ROOT"
 mkdir -p logs checkpoints
 
