@@ -6,6 +6,9 @@ import json
 import os
 import subprocess
 import sys
+from pathlib import Path
+
+REPO_ROOT = Path(__file__).resolve().parents[1]
 
 MODELS = {
     'modulated_loglo':   {'display': 'Modulated LOGLO-FNO', 'config': 'configs/modulated_loglo.yml'},
@@ -19,7 +22,7 @@ MODELS = {
 
 DEFAULT_JOBS_PER_CHAIN = 4
 LOGLO_JOBS_PER_CHAIN = 4
-SLURM_TEMPLATE = 'slurm/train.sh'
+SLURM_TEMPLATE = str(REPO_ROOT / 'slurm' / 'train.sh')
 
 
 def default_jobs_per_chain(model_key):
@@ -209,6 +212,9 @@ def main():
     parser.add_argument('--dry-run', action='store_true',
                         help='Print sbatch commands without submitting')
     args = parser.parse_args()
+
+    os.chdir(REPO_ROOT)
+    (REPO_ROOT / 'logs').mkdir(exist_ok=True)
 
     if args.models is not None:
         if args.seeds is None:

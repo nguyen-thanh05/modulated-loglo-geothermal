@@ -14,6 +14,8 @@ weights/
 checkpoints/
 out/
 evaluation_results/
+logs/*.out
+logs/*.err
 *.pth
 
 # IDE

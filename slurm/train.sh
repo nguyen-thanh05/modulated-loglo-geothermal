@@ -6,13 +6,28 @@
 #SBATCH --mem=96G
 #SBATCH --time=11:55:00
 #SBATCH --account=def-juliana2
-#SBATCH --output=/home/thanh2/projects/def-juliana2/thanh2/master-research/geothermal-surrogate-w-fno/logs/%x_%j.out
+#SBATCH --output=logs/%x_%j.out
 #SBATCH --mail-user=thanh2@ualberta.ca
 #SBATCH --mail-type=ALL
+
+# Env is the existing project venv. On a login node:
+#   module load python/3.11
+#   module load cuda
+#   source /home/thanh2/projects/def-juliana2/thanh2/.torch/bin/activate
+#   pip install -e .
+
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+cd "$REPO_ROOT"
+mkdir -p logs checkpoints
 
 if [ -z "$CONFIG" ] || [ -z "$SEED" ]; then
     echo "ERROR: CONFIG and SEED must be set."
     echo "Usage: sbatch --export=ALL,CONFIG=configs/modulated_loglo.yml,SEED=42 slurm/train.sh"
+    exit 1
+fi
+
+if [ ! -f "$CONFIG" ]; then
+    echo "ERROR: config not found: $CONFIG (cwd=$(pwd))"
     exit 1
 fi
 
@@ -31,6 +46,7 @@ module load python/3.11
 module load cuda
 source /home/thanh2/projects/def-juliana2/thanh2/.torch/bin/activate
 
+echo "Repo: $REPO_ROOT"
 echo "Config: $CONFIG | Seed: $SEED | Job: $SLURM_JOB_ID"
 
 python training/train.py --config "$CONFIG" --seed "$SEED"

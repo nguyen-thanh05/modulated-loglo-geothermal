@@ -6,11 +6,20 @@ This directory is self-contained. Move it anywhere and run `git init` when you w
 
 ## Install
 
-Use the existing Anaconda environment named `torch`:
+Locally, use the existing Anaconda environment named `torch`:
 
 ```bash
 conda activate torch
-pip install -e . -r requirements.txt
+pip install -e .
+```
+
+On the cluster, use the existing `.torch` venv (already has CUDA PyTorch):
+
+```bash
+module load python/3.11
+module load cuda
+source /home/thanh2/projects/def-juliana2/thanh2/.torch/bin/activate
+pip install -e .
 ```
 
 ## Data
@@ -24,10 +33,9 @@ Required files:
 - `all_action.npy`
 - `all_por_matrix.npy`, `all_por_frac.npy`
 - `all_perm_matrix.npy`, `all_perm_frac.npy`
+- `all_energyrate_bhp.npy` (9 BHPs + 7 producer energy rates; loaded for every config)
 
 Train trajectories are indices `0–299`. Held-out test trajectories are `350–399`.
-
-The special `modulated_loglo_aux` config also reads `all_energyrate_bhp.npy` (9 BHPs + 7 producer energy rates).
 
 ## Train
 
@@ -54,7 +62,7 @@ python slurm/launch_mse_only.py --dry-run
 python slurm/launch_loss_ablation.py --dry-run
 ```
 
-`slurm/train.sh` is the sbatch template. Edit account, modules, and log paths for your cluster if they differ.
+`slurm/train.sh` cds to this repo, writes logs to `logs/`, and activates `.torch`. Edit account, GPU type, or the venv path only if those differ on your cluster.
 
 ## Evaluate
 
