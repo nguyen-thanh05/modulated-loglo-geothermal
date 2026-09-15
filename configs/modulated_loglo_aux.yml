@@ -29,6 +29,7 @@ training:
   cooldown_steps: 30000
   min_lr: 1.0e-4
   epochs_per_run: 500
+  aux_start_step: 80000
 
 loss:
   use_mse: true
@@ -41,7 +42,7 @@ loss:
   spectral_weight: 3.0
   spectral_iLow: 2
   spectral_iHigh: 10
-  aux_weight: 1.0
+  aux_weight: 0.01
   channel_weights: [1.0, 1.0, 1.0, 1.0]
 
 logging:

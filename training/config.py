@@ -36,6 +36,7 @@ class TrainingConfig:
     min_lr: float
     use_pushforward: bool
     epochs_per_run: int
+    aux_start_step: int
 
 
 @dataclass
@@ -120,6 +121,7 @@ def build_run_config(cfg, args):
             min_lr=training_root.get('min_lr', 1e-5),
             use_pushforward=training_root.get('use_pushforward', True),
             epochs_per_run=training_root.get('epochs_per_run', num_epochs),
+            aux_start_step=training_root.get('aux_start_step', 0),
         ),
         loss=LossConfig(
             use_mse=cfg['loss'].get('use_mse', True),

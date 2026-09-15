@@ -51,20 +51,30 @@ class LossComputer:
         weights = self._channel_weights.to(pred.device)
         return (per_channel * weights).mean()
 
-    def compute_aux_components(self, predicted_aux, aux_target):
-        """Return (weighted_aux, bhp_mse, energy_mse). Zeros if aux is unused."""
+    def compute_aux_components(
+        self, predicted_aux, aux_target, include_aux=True,
+    ):
+        """Return (weighted_aux, bhp_mse, energy_mse).
+
+        Unweighted BHP/energy are always computed when aux exists so logs
+        can show a frozen-head baseline. The weighted term is zero unless
+        include_aux is True and aux_weight > 0.
+        """
         device = aux_target.device
-        if predicted_aux is None or self.cfg.aux_weight <= 0:
+        if predicted_aux is None:
             zero = torch.tensor(0.0, device=device)
             return zero, zero, zero
         loss_aux_bhp = self.mse_fn(predicted_aux[:, :9], aux_target[:, :9])
         loss_aux_energy = self.mse_fn(predicted_aux[:, 9:], aux_target[:, 9:])
         loss_aux = self.mse_fn(predicted_aux, aux_target)
-        return self.cfg.aux_weight * loss_aux, loss_aux_bhp, loss_aux_energy
+        if include_aux and self.cfg.aux_weight > 0:
+            return self.cfg.aux_weight * loss_aux, loss_aux_bhp, loss_aux_energy
+        zero = torch.zeros((), device=device, dtype=loss_aux.dtype)
+        return zero, loss_aux_bhp, loss_aux_energy
 
     def compute_one_step_loss(
         self, *, predicted_y, y_t, y_tp1, action_t, static,
-        predicted_aux=None, aux_tp1=None,
+        predicted_aux=None, aux_tp1=None, include_aux=True,
     ):
         cfg = self.cfg
         device = predicted_y.device
@@ -104,7 +114,7 @@ class LossComputer:
         if aux_tp1 is None:
             aux_tp1 = torch.zeros(predicted_y.shape[0], 16, device=device)
         loss_aux, loss_aux_bhp, loss_aux_energy = self.compute_aux_components(
-            predicted_aux, aux_tp1)
+            predicted_aux, aux_tp1, include_aux=include_aux)
         loss = loss + loss_aux
 
         return OneStepLoss(
@@ -121,7 +131,7 @@ class LossComputer:
 
     def compute_pushforward_loss(
         self, *, y_pf, pred_pf, target_t, target_pf, action_t, static,
-        predicted_aux=None, aux_target=None,
+        predicted_aux=None, aux_target=None, include_aux=True,
     ):
         cfg = self.cfg
         device = pred_pf.device
@@ -145,7 +155,8 @@ class LossComputer:
                 pred_pf, target_pf, iLow=cfg.spectral_iLow, iHigh=cfg.spectral_iHigh)
             loss_pf = loss_pf + cfg.spectral_weight * loss_pf_spec
         if predicted_aux is not None and aux_target is not None:
-            loss_aux, _, _ = self.compute_aux_components(predicted_aux, aux_target)
+            loss_aux, _, _ = self.compute_aux_components(
+                predicted_aux, aux_target, include_aux=include_aux)
             loss_pf = loss_pf + loss_aux
 
         return loss_pf

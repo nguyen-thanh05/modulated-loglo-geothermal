@@ -34,6 +34,12 @@ class Trainer:
         if not 0.0 <= run_config.training.noise_probability <= 1.0:
             raise ValueError("training.noise_probability must be in [0, 1]")
         self.model = create_model(model_cfg, model_type).to(self.device)
+        self._aux_enabled = (
+            not hasattr(self.model, 'aux_head')
+            or run_config.training.aux_start_step <= 0
+        )
+        if not self._aux_enabled:
+            self._set_aux_head_requires_grad(False)
 
         self.ema_model = copy.deepcopy(self.model)
         self.ema_model.requires_grad_(False)
@@ -125,6 +131,7 @@ class Trainer:
         self.ema_started = (
             self.global_step >= self.cfg.training.warmup_steps
         )
+        self._sync_aux_head_after_resume()
 
         print(f"Training epochs {start_epoch+1} to {end_epoch} "
               f"(of {num_epochs} total)")
@@ -178,12 +185,56 @@ class Trainer:
                   f"LossH1: {one_step_loss.loss_h1.item():.5f}, "
                   f"LossAux: {one_step_loss.loss_aux.item():.5f}")
 
+    def _has_aux_head(self):
+        return hasattr(self.model, 'aux_head')
+
+    def _aux_active(self):
+        return self.global_step >= self.cfg.training.aux_start_step
+
+    def _set_aux_head_requires_grad(self, enabled):
+        if not self._has_aux_head():
+            return
+        for param in self.model.aux_head.parameters():
+            param.requires_grad = enabled
+
+    def _copy_aux_head_to_ema(self):
+        if not self._has_aux_head():
+            return
+        for ema_param, param in zip(
+                self.ema_model.aux_head.parameters(),
+                self.model.aux_head.parameters()):
+            ema_param.copy_(param)
+        for ema_buf, buf in zip(
+                self.ema_model.aux_head.buffers(),
+                self.model.aux_head.buffers()):
+            ema_buf.copy_(buf)
+
+    def _sync_aux_head_after_resume(self):
+        if not self._has_aux_head() or self.cfg.training.aux_start_step <= 0:
+            self._aux_enabled = True
+            return
+        if self.global_step >= self.cfg.training.aux_start_step:
+            self._set_aux_head_requires_grad(True)
+            self._aux_enabled = True
+            return
+        self._set_aux_head_requires_grad(False)
+        self._aux_enabled = False
+
+    def _maybe_enable_aux(self):
+        if self._aux_enabled or not self._aux_active():
+            return
+        self._set_aux_head_requires_grad(True)
+        self._copy_aux_head_to_ema()
+        self._aux_enabled = True
+
     def _train_batch(self, batch):
         (
             y_history, action_history, valid_k, y_t, y_tp1, action_t, static,
             _aux_t, aux_tp1,
         ) = batch
         static = static.to(self.device)
+        self._maybe_enable_aux()
+        include_aux = self._aux_enabled
 
         train_cfg = self.cfg.training
         k_upper = min(
@@ -219,6 +270,7 @@ class Trainer:
             static=static,
             predicted_aux=predicted_aux,
             aux_tp1=aux_tp1,
+            include_aux=include_aux,
         )
         loss_pf = self._compute_pushforward_loss(
             k=k,
@@ -230,6 +282,7 @@ class Trainer:
             action_t=action_t,
             static=static,
             aux_tp1=aux_tp1,
+            include_aux=include_aux,
         )
 
         with torch.no_grad():
@@ -244,7 +297,7 @@ class Trainer:
 
     def _compute_pushforward_loss(
         self, *, k, y_history, action_history, valid_k, y_t, y_tp1,
-        action_t, static, aux_tp1
+        action_t, static, aux_tp1, include_aux=True,
     ):
         device = y_tp1.device
         loss_pf = torch.tensor(0.0, device=device)
@@ -289,6 +342,7 @@ class Trainer:
             static=static_pf,
             predicted_aux=pred_pf_aux,
             aux_target=aux_tp1[pf_mask],
+            include_aux=include_aux,
         )
 
     def _log_batch(self, *, epoch, batch_idx, one_step_loss, loss_l2_rel,
