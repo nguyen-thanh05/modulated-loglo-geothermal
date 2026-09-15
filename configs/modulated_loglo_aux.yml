@@ -33,9 +33,9 @@ training:
 
 loss:
   use_mse: true
-  mse_weight: 3.0
+  mse_weight: 5.0
   use_h1: true
-  h1_weight: 1.0
+  h1_weight: 2.0
   use_mbe: true
   mbe_weight: 3.0
   use_spectral: true
@@ -43,7 +43,7 @@ loss:
   spectral_iLow: 2
   spectral_iHigh: 10
   aux_weight: 0.01
-  channel_weights: [1.0, 1.0, 1.0, 1.0]
+  channel_weights: [1.0, 1.0, 2.0, 2.0]
 
 logging:
   writer: true
