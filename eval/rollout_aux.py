@@ -42,6 +42,10 @@ FIELD_METRIC_NAMES = (
     "relative_l2",
     "rmse_normalized",
     "rmse_physical",
+    "mae_normalized",
+    "mae_physical",
+    "max_abs_normalized",
+    "max_abs_physical",
 )
 
 
@@ -158,16 +162,23 @@ def physical_scales(dataset, device):
 
 def compute_field_metrics(prediction, target, scales):
     difference = prediction - target
+    abs_error = difference.abs()
     flat_diff = difference.flatten(start_dim=2)
     flat_target = target.flatten(start_dim=2)
     relative_l2 = torch.linalg.vector_norm(flat_diff, ord=2, dim=2) / (
         torch.linalg.vector_norm(flat_target, ord=2, dim=2)
     )
     rmse_normalized = torch.sqrt(difference.square().mean(dim=(2, 3, 4)))
+    mae_normalized = abs_error.mean(dim=(2, 3, 4))
+    max_abs_normalized = abs_error.amax(dim=(2, 3, 4))
     return {
         "relative_l2": relative_l2,
         "rmse_normalized": rmse_normalized,
         "rmse_physical": rmse_normalized * scales,
+        "mae_normalized": mae_normalized,
+        "mae_physical": mae_normalized * scales,
+        "max_abs_normalized": max_abs_normalized,
+        "max_abs_physical": max_abs_normalized * scales,
     }
 
 
@@ -247,6 +258,139 @@ def evaluate_checkpoint(model, adapter, dataset, trajectory_indices,
         "gt_energy_physical": gt_energy.numpy(),
     }
     return field_metrics, aux_metrics
+
+
+@torch.inference_mode()
+def evaluate_error_maps(model, adapter, dataset, trajectory_indices, device):
+    """Roll out selected trajectories and keep spatial |error| diagnostics.
+
+    Maps are max-|error| over depth so a hotspot on any layer stays visible.
+    """
+    n_trajectories = len(trajectory_indices)
+    n_timesteps = dataset.n_timesteps
+    n_channels = len(CHANNEL_NAMES)
+    sample = dataset._state_at(trajectory_indices[0], 0)
+    _, depth, height, width = sample.shape
+    scales = physical_scales(dataset, device)
+    scale_np = scales.detach().cpu().numpy().reshape(1, 1, n_channels)
+
+    field_metrics = {
+        name: np.empty((n_trajectories, n_timesteps, n_channels), dtype=np.float32)
+        for name in FIELD_METRIC_NAMES
+    }
+    maps_at_peak = np.empty(
+        (n_trajectories, n_channels, height, width), dtype=np.float32,
+    )
+    maps_max_over_time = np.empty(
+        (n_trajectories, n_channels, height, width), dtype=np.float32,
+    )
+    peak_weeks = np.empty((n_trajectories, n_channels), dtype=np.int32)
+
+    for traj_row, traj_index in enumerate(trajectory_indices):
+        state = stack_field(dataset, dataset._state_at, [traj_index], device, 0)
+        static = stack_field(dataset, dataset._static_at, [traj_index], device)
+        depth_max_series = np.empty(
+            (n_timesteps, n_channels, height, width), dtype=np.float32,
+        )
+        max_over_time = torch.zeros(
+            n_channels, height, width, device=device, dtype=state.dtype,
+        )
+
+        for timestep in range(n_timesteps):
+            action = stack_field(
+                dataset, dataset._action_at, [traj_index], device, timestep,
+            )
+            mask_wells(action)
+            prediction, prediction_aux = split_model_output(
+                adapter.forward(
+                    model, adapter.build_model_input(state, action, static),
+                )
+            )
+            if prediction_aux is None:
+                raise RuntimeError(
+                    "Model did not return aux; expected modulated_loglo_aux"
+                )
+            target = stack_field(
+                dataset, dataset._state_at, [traj_index], device, timestep + 1,
+            )
+            step_metrics = compute_field_metrics(prediction, target, scales)
+            for name, values in step_metrics.items():
+                field_metrics[name][traj_row, timestep] = values.cpu().numpy()[0]
+            abs_error = (prediction - target).abs()[0]
+            depth_max = abs_error.amax(dim=1)
+            depth_max_series[timestep] = depth_max.cpu().numpy()
+            max_over_time = torch.maximum(max_over_time, depth_max)
+            state = prediction
+
+        maps_max_over_time[traj_row] = max_over_time.cpu().numpy()
+        for channel in range(n_channels):
+            peak_week = int(np.argmax(field_metrics["max_abs_normalized"][traj_row, :, channel]))
+            peak_weeks[traj_row, channel] = peak_week
+            maps_at_peak[traj_row, channel] = depth_max_series[peak_week, channel]
+        print(
+            f"    spatial diagnostics {traj_row + 1}/{n_trajectories} "
+            f"(traj {traj_index})",
+            flush=True,
+        )
+
+    return {
+        "mae_normalized": field_metrics["mae_normalized"],
+        "mae_physical": field_metrics["mae_physical"],
+        "max_abs_normalized": field_metrics["max_abs_normalized"],
+        "max_abs_physical": field_metrics["max_abs_physical"],
+        "rmse_normalized": field_metrics["rmse_normalized"],
+        "rmse_physical": field_metrics["rmse_physical"],
+        "relative_l2": field_metrics["relative_l2"],
+        "maps_at_peak_normalized": maps_at_peak,
+        "maps_at_peak_physical": maps_at_peak * scale_np.reshape(1, n_channels, 1, 1),
+        "maps_max_over_time_normalized": maps_max_over_time,
+        "maps_max_over_time_physical": (
+            maps_max_over_time * scale_np.reshape(1, n_channels, 1, 1)
+        ),
+        "peak_weeks": peak_weeks,
+        "trajectory_indices": np.asarray(trajectory_indices, dtype=np.int64),
+        "channel_names": np.asarray(CHANNEL_NAMES),
+        "channel_units_physical": np.asarray(CHANNEL_UNITS_PHYSICAL),
+    }
+
+
+def plot_field_errors(field_metrics, output_dir):
+    output_dir.mkdir(parents=True, exist_ok=True)
+    timesteps = np.arange(field_metrics["relative_l2"].shape[1])
+    colors = ("tab:red", "tab:orange", "tab:blue", "tab:green")
+
+    fig, axes = plt.subplots(2, 2, figsize=(12, 8), sharex=True)
+    for channel, ax in enumerate(axes.ravel()):
+        values = field_metrics["relative_l2"][:, :, channel]
+        mean = values.mean(axis=0)
+        lower = values.min(axis=0)
+        upper = values.max(axis=0)
+        ax.plot(timesteps, mean, color=colors[channel], linewidth=2.0)
+        ax.fill_between(timesteps, lower, upper, color=colors[channel], alpha=0.15)
+        ax.set_title(CHANNEL_NAMES[channel])
+        ax.set_ylabel("Relative L2")
+        ax.set_xlabel("week")
+        ax.set_ylim(bottom=0.0)
+        ax.grid(True, alpha=0.25)
+    fig.suptitle("Autoregressive field relative L2")
+    fig.tight_layout()
+    fig.savefig(output_dir / "field_relative_l2_vs_time.png", dpi=150)
+    plt.close(fig)
+
+    fig, axes = plt.subplots(2, 2, figsize=(12, 8), sharex=True)
+    for channel, ax in enumerate(axes.ravel()):
+        values = field_metrics["rmse_physical"][:, :, channel]
+        mean = values.mean(axis=0)
+        ax.plot(timesteps, mean, color=colors[channel], linewidth=2.0)
+        ax.set_title(CHANNEL_NAMES[channel])
+        ax.set_ylabel(f"RMSE ({CHANNEL_UNITS_PHYSICAL[channel]})")
+        ax.set_xlabel("week")
+        ax.set_ylim(bottom=0.0)
+        ax.grid(True, alpha=0.25)
+    fig.suptitle("Autoregressive field physical RMSE")
+    fig.tight_layout()
+    fig.savefig(output_dir / "field_rmse_physical_vs_time.png", dpi=150)
+    plt.close(fig)
 
 
 def plot_aux_timeseries(aux_metrics, trajectory_indices, output_dir, max_plots):
@@ -446,8 +590,10 @@ def main(argv=None):
         field_metrics, aux_metrics, config_path, config,
         checkpoint_path, args.seed, trajectory_indices, data_path,
     )
+    plot_dir = output_root / "plots"
+    plot_field_errors(field_metrics, plot_dir)
     plot_aux_timeseries(
-        aux_metrics, trajectory_indices, output_root / "plots", args.plot_max,
+        aux_metrics, trajectory_indices, plot_dir, args.plot_max,
     )
     print(f"Saved {output_root / 'metrics.npz'}")
     print(f"Plots in {output_root / 'plots'}")

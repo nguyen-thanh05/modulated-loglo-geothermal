@@ -43,6 +43,8 @@ loss:
   spectral_iLow: 2
   spectral_iHigh: 10
   aux_weight: 0.01
+  use_mean_pressure: true
+  mean_pressure_weight: 5.0
   channel_weights: [1.0, 1.0, 2.0, 2.0]
 
 logging:

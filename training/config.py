@@ -53,6 +53,8 @@ class LossConfig:
     spectral_iLow: int
     spectral_iHigh: int
     aux_weight: float
+    use_mean_pressure: bool
+    mean_pressure_weight: float
 
 
 @dataclass
@@ -136,6 +138,8 @@ def build_run_config(cfg, args):
             spectral_iLow=cfg['loss'].get('spectral_iLow', 2),
             spectral_iHigh=cfg['loss'].get('spectral_iHigh', 10),
             aux_weight=cfg['loss'].get('aux_weight', 0.0),
+            use_mean_pressure=cfg['loss'].get('use_mean_pressure', False),
+            mean_pressure_weight=cfg['loss'].get('mean_pressure_weight', 0.0),
         ),
         logging=LoggingConfig(
             writer=cfg['logging']['writer'],

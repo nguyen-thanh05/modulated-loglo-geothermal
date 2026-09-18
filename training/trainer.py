@@ -183,6 +183,7 @@ class Trainer:
             print(f"Epoch {epoch + 1}, k_upper={k_upper}, "
                   f"LossMSE: {one_step_loss.loss_mse.item():.5f}, "
                   f"LossH1: {one_step_loss.loss_h1.item():.5f}, "
+                  f"LossMeanP: {one_step_loss.loss_mean_pressure.item():.5f}, "
                   f"LossAux: {one_step_loss.loss_aux.item():.5f}")
 
     def _has_aux_head(self):
@@ -376,6 +377,7 @@ class Trainer:
             print(f"Batch {batch_idx}, k={k}, "
                   f"LossMSE: {one_step_loss.loss_mse.item():.5f}, "
                   f"LossH1: {one_step_loss.loss_h1.item():.5f}, "
+                  f"LossMeanP: {one_step_loss.loss_mean_pressure.item():.5f}, "
                   f"LossPF: {loss_pf.item():.5f}, "
                   f"LossSpec: {one_step_loss.loss_spectral.item():.5f}, "
                   f"LossAux: {one_step_loss.loss_aux.item():.5f}")

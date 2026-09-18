@@ -1,0 +1,26 @@
+---
+description: Find gitignored checkpoints and evaluation artifacts via the shell, not Glob/Grep
+alwaysApply: true
+---
+
+# Artifact discovery
+
+`checkpoints/`, `evaluation_results/`, `weights/`, `out/`, and `logs/` are gitignored. `.cursorignore` un-ignores them for Read, but Grep/Glob still miss binaries (`.pth`, `.pt`, `.npz`, `.png`) and large files.
+
+## Discover paths with the shell
+
+Treat a Glob/Grep miss as "not indexed", not "missing". List files instead:
+
+```powershell
+Get-ChildItem -Recurse -File checkpoints, evaluation_results | Select-Object FullName, Length
+```
+
+On Unix: `find checkpoints evaluation_results -type f`. Then Read a specific path (PNGs work; `.pth` is binary).
+
+## Default layout
+
+YAML `checkpoints.final_path` is stored as `<parent>/seed<seed>/<basename>` after seed injection. Example: `configs/modulated_loglo_aux.yml` → `checkpoints/seed42/modulated_loglo_aux_hetero_final.pth`. Resume checkpoints live under `checkpoints/running/seed<seed>/`.
+
+Aux rollouts write `evaluation_results/rollouts_aux/<run_name>/` (`metrics.npz`, `plots/`). Field rollouts use `evaluation_results/rollouts/`.
+
+Do not embed or index weight files. If Instant Grep is on, it ignores `.cursorignore` `!` negations; use the shell anyway.

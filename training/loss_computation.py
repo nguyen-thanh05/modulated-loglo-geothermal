@@ -5,7 +5,7 @@ import torch.nn as nn
 
 from losses import H1Loss, LpLoss
 from training.physics import (
-    compute_mbe_loss, extract_physical_porosity,
+    compute_mbe_loss, compute_mean_pressure_loss, extract_physical_porosity,
     radial_binned_spectral_loss,
 )
 from training.utils import build_action_for_mbe
@@ -16,6 +16,7 @@ class OneStepLoss:
     loss: torch.Tensor
     loss_mse: torch.Tensor
     loss_h1: torch.Tensor
+    loss_mean_pressure: torch.Tensor
     loss_mbe: torch.Tensor
     loss_spectral: torch.Tensor
     spectral_bands: torch.Tensor
@@ -92,6 +93,12 @@ class LossComputer:
         else:
             loss_h1 = torch.tensor(0.0, device=device)
 
+        if cfg.use_mean_pressure and cfg.mean_pressure_weight > 0:
+            loss_mean_pressure = compute_mean_pressure_loss(predicted_y, y_tp1)
+            loss = loss + cfg.mean_pressure_weight * loss_mean_pressure
+        else:
+            loss_mean_pressure = torch.tensor(0.0, device=device)
+
         if cfg.use_mbe:
             phi_m, phi_frac = extract_physical_porosity(static)
             action_mbe = build_action_for_mbe(action_t)
@@ -121,6 +128,7 @@ class LossComputer:
             loss=loss,
             loss_mse=loss_mse,
             loss_h1=loss_h1,
+            loss_mean_pressure=loss_mean_pressure,
             loss_mbe=loss_mbe,
             loss_spectral=loss_spectral,
             spectral_bands=spectral_bands,
@@ -142,6 +150,9 @@ class LossComputer:
                 pred_pf, target_pf)
         if cfg.use_h1:
             loss_pf = loss_pf + cfg.h1_weight * self.calculate_weighted_h1_loss(
+                pred_pf, target_pf)
+        if cfg.use_mean_pressure and cfg.mean_pressure_weight > 0:
+            loss_pf = loss_pf + cfg.mean_pressure_weight * compute_mean_pressure_loss(
                 pred_pf, target_pf)
         if cfg.use_mbe:
             phi_m_pf, phi_frac_pf = extract_physical_porosity(static)

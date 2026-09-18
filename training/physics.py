@@ -102,6 +102,18 @@ def add_adaptive_noise(y, alpha=(0.0025, 0.0025, 0.025, 0.025), eps=1e-8):
     return y + alpha_t * sigma * N
 
 
+def compute_mean_pressure_loss(pred, target):
+    """MSE of spatial means on pressure channels (P_form, P_frac).
+
+    pred/target are normalized (B, 4, X, Y, Z). A uniform pressure offset
+    of size δ yields loss δ², matching the pressure part of voxel MSE.
+    """
+    pred_p = pred[:, 2:4]
+    tgt_p = target[:, 2:4]
+    mean_err = pred_p.mean(dim=(-3, -2, -1)) - tgt_p.mean(dim=(-3, -2, -1))
+    return (mean_err ** 2).mean()
+
+
 def radial_binned_spectral_loss(preds, target, iLow=2, iHigh=10):
     B, C, D, H, W = target.shape
     device = target.device

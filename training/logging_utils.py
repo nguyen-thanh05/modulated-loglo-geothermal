@@ -4,6 +4,7 @@ import wandb
 
 from training.constants import CHANNEL_NAMES, WELL_COORDS
 from training.model_adapters import split_model_output
+from training.physics import compute_mean_pressure_loss
 
 
 class TrainingLogger:
@@ -45,6 +46,7 @@ class TrainingLogger:
         wandb.log({
             'Loss/MSE': one_step_loss.loss_mse.item(),
             'Loss/H1': one_step_loss.loss_h1.item(),
+            'Loss/MeanPressure': one_step_loss.loss_mean_pressure.item(),
             'Loss/L2_Rel': loss_l2_rel.item(),
             'Loss/MBE': one_step_loss.loss_mbe.item(),
             'Loss/Spectral_Low': one_step_loss.spectral_bands[0].item(),
@@ -80,6 +82,7 @@ class TrainingLogger:
 
             loss_mse_val = loss_computer.mse_fn(val_pred, val_y_tp1)
             loss_h1_val = loss_computer.calculate_weighted_h1_loss(val_pred, val_y_tp1)
+            loss_mean_pressure_val = compute_mean_pressure_loss(val_pred, val_y_tp1)
             loss_l2_rel_val = loss_computer.l2_relative(val_pred, val_y_tp1)
             _, loss_aux_bhp_val, loss_aux_energy_val = (
                 loss_computer.compute_aux_components(val_pred_aux, val_aux_tp1)
@@ -93,6 +96,7 @@ class TrainingLogger:
             val_log = {
                 'Val_Loss/MSE': loss_mse_val.item(),
                 'Val_Loss/H1': loss_h1_val.item(),
+                'Val_Loss/MeanPressure': loss_mean_pressure_val.item(),
                 'Val_Loss/L2_Rel': loss_l2_rel_val.item(),
                 'Val_Loss/Aux': loss_aux_val.item(),
                 'Val_Loss/Aux_BHP': loss_aux_bhp_val.item(),
