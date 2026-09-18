@@ -1,2 +1,57 @@
+# Re-include gitignored paths. Parent dirs must be un-ignored first
+# or Cursor will not traverse into them.
+!*/
+!**/
+!**/*
+
 !checkpoints/
+!checkpoints/**
 !evaluation_results/
+!evaluation_results/**
+!weights/
+!weights/**
+!out/
+!out/**
+!logs/
+!logs/**
+!build/
+!build/**
+!.vscode/
+!.vscode/**
+!.idea/
+!.idea/**
+
+# Also un-ignore types Cursor skips by default, plus gitignored weights.
+!*.pth
+!*.pt
+!*.ckpt
+!*.npz
+!*.npy
+!*.pkl
+!*.pickle
+!*.h5
+!*.hdf5
+!*.png
+!*.jpg
+!*.jpeg
+!*.gif
+!*.webp
+!*.svg
+!*.pdf
+!*.csv
+!*.json
+!*.jsonl
+!*.out
+!*.err
+!*.log
+!*.bin
+!*.zip
+!*.gz
+!*.tar
+
+# Keep secrets and VCS out of the agent even after the catch-all.
+.git/
+*.env
+.env*
+*KEY
+WANDB_APIKEY
